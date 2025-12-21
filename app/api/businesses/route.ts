@@ -23,6 +23,8 @@ interface Business {
   social_twitter: string | null;
   social_linkedin: string | null;
   social_instagram: string | null;
+  target_anchor_text: string | null;
+  secondary_anchor_texts: string[] | null;
 }
 
 export async function GET() {
@@ -80,8 +82,10 @@ export async function POST(request: Request) {
           social_twitter = $15,
           social_linkedin = $16,
           social_instagram = $17,
+          target_anchor_text = $18,
+          secondary_anchor_texts = $19,
           updated_at = NOW()
-        WHERE user_id = $18
+        WHERE user_id = $20
         RETURNING *`,
         [
           data.name,
@@ -101,6 +105,8 @@ export async function POST(request: Request) {
           data.social_twitter || null,
           data.social_linkedin || null,
           data.social_instagram || null,
+          data.target_anchor_text || null,
+          data.secondary_anchor_texts || null,
           session.id
         ]
       );
@@ -112,8 +118,9 @@ export async function POST(request: Request) {
         `INSERT INTO businesses (
           user_id, name, website_url, email, phone, description_short, description_long,
           logo_url, address_line1, address_line2, city, state, postal_code, country,
-          social_facebook, social_twitter, social_linkedin, social_instagram
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+          social_facebook, social_twitter, social_linkedin, social_instagram,
+          target_anchor_text, secondary_anchor_texts
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
         RETURNING *`,
         [
           session.id,
@@ -133,7 +140,9 @@ export async function POST(request: Request) {
           data.social_facebook || null,
           data.social_twitter || null,
           data.social_linkedin || null,
-          data.social_instagram || null
+          data.social_instagram || null,
+          data.target_anchor_text || null,
+          data.secondary_anchor_texts || null
         ]
       );
 
