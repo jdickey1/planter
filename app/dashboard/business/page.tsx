@@ -23,6 +23,10 @@ interface Business {
   social_twitter: string;
   social_linkedin: string;
   social_instagram: string;
+  target_anchor_text: string;
+  secondary_anchor_text_1: string;
+  secondary_anchor_text_2: string;
+  secondary_anchor_text_3: string;
 }
 
 interface User {
@@ -49,6 +53,10 @@ const emptyBusiness: Business = {
   social_twitter: "",
   social_linkedin: "",
   social_instagram: "",
+  target_anchor_text: "",
+  secondary_anchor_text_1: "",
+  secondary_anchor_text_2: "",
+  secondary_anchor_text_3: "",
 };
 
 export default function BusinessPage() {
@@ -77,7 +85,17 @@ export default function BusinessPage() {
         const bizRes = await fetch("/api/businesses");
         const bizData = await bizRes.json();
         if (bizData.business) {
-          setBusiness({ ...emptyBusiness, ...bizData.business });
+          const biz = bizData.business;
+          // Convert secondary_anchor_texts array to individual fields
+          const secondaryTexts = biz.secondary_anchor_texts || [];
+          setBusiness({
+            ...emptyBusiness,
+            ...biz,
+            target_anchor_text: biz.target_anchor_text || "",
+            secondary_anchor_text_1: secondaryTexts[0] || "",
+            secondary_anchor_text_2: secondaryTexts[1] || "",
+            secondary_anchor_text_3: secondaryTexts[2] || "",
+          });
         }
       } catch {
         router.push("/login");
@@ -124,6 +142,7 @@ export default function BusinessPage() {
         social_twitter: result.data.social_twitter || prev.social_twitter,
         social_linkedin: result.data.social_linkedin || prev.social_linkedin,
         social_instagram: result.data.social_instagram || prev.social_instagram,
+        target_anchor_text: result.data.suggested_anchor_text || prev.target_anchor_text,
       }));
 
       setSuccess("Data fetched from website. Review and complete the remaining fields.");
@@ -147,10 +166,22 @@ export default function BusinessPage() {
     setSaving(true);
 
     try {
+      // Convert secondary anchor text fields to array
+      const secondary_anchor_texts = [
+        business.secondary_anchor_text_1,
+        business.secondary_anchor_text_2,
+        business.secondary_anchor_text_3,
+      ].filter(text => text.trim() !== "");
+
+      const businessData = {
+        ...business,
+        secondary_anchor_texts: secondary_anchor_texts.length > 0 ? secondary_anchor_texts : null,
+      };
+
       const res = await fetch("/api/businesses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(business),
+        body: JSON.stringify(businessData),
       });
 
       const result = await res.json();
@@ -160,7 +191,17 @@ export default function BusinessPage() {
         return;
       }
 
-      setBusiness({ ...emptyBusiness, ...result.business });
+      // Convert secondary_anchor_texts array back to individual fields
+      const biz = result.business;
+      const secondaryTexts = biz.secondary_anchor_texts || [];
+      setBusiness({
+        ...emptyBusiness,
+        ...biz,
+        target_anchor_text: biz.target_anchor_text || "",
+        secondary_anchor_text_1: secondaryTexts[0] || "",
+        secondary_anchor_text_2: secondaryTexts[1] || "",
+        secondary_anchor_text_3: secondaryTexts[2] || "",
+      });
       setSuccess(result.created ? "Business profile created!" : "Business profile updated!");
     } catch {
       setError("Something went wrong");
@@ -429,6 +470,71 @@ export default function BusinessPage() {
                     placeholder="https://instagram.com/..."
                     className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#22C55E]"
                   />
+                </div>
+              </div>
+            </div>
+
+            {/* SEO Settings */}
+            <div>
+              <h3 className="text-md font-semibold text-slate-900 mb-2">SEO Settings</h3>
+              <p className="text-sm text-slate-600 mb-4">
+                Optimize your anchor text (link text) for better SEO when submitting to directories.
+              </p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Primary Target Anchor Text <span className="text-slate-400">(max 100 chars)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={business.target_anchor_text}
+                    onChange={(e) => setBusiness({ ...business, target_anchor_text: e.target.value.substring(0, 100) })}
+                    placeholder="e.g., Texas Government Relations"
+                    maxLength={100}
+                    className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#22C55E]"
+                  />
+                  <div className="text-xs text-slate-400 mt-1">{business.target_anchor_text.length}/100</div>
+                </div>
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Secondary Anchor Text 1 <span className="text-slate-400">(optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={business.secondary_anchor_text_1}
+                      onChange={(e) => setBusiness({ ...business, secondary_anchor_text_1: e.target.value.substring(0, 100) })}
+                      placeholder="Alternative anchor text"
+                      maxLength={100}
+                      className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#22C55E]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Secondary Anchor Text 2 <span className="text-slate-400">(optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={business.secondary_anchor_text_2}
+                      onChange={(e) => setBusiness({ ...business, secondary_anchor_text_2: e.target.value.substring(0, 100) })}
+                      placeholder="Alternative anchor text"
+                      maxLength={100}
+                      className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#22C55E]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Secondary Anchor Text 3 <span className="text-slate-400">(optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={business.secondary_anchor_text_3}
+                      onChange={(e) => setBusiness({ ...business, secondary_anchor_text_3: e.target.value.substring(0, 100) })}
+                      placeholder="Alternative anchor text"
+                      maxLength={100}
+                      className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#22C55E]"
+                    />
+                  </div>
                 </div>
               </div>
             </div>

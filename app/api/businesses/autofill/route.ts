@@ -48,6 +48,7 @@ export async function POST(request: Request) {
       social_twitter: null,
       social_linkedin: null,
       social_instagram: null,
+      suggested_anchor_text: null,
     };
 
     // Business name - try various sources
@@ -107,6 +108,23 @@ export async function POST(request: Request) {
         data.social_instagram = href;
       }
     });
+
+    // Suggest anchor text from H1 or meta title
+    const h1Text = $("h1").first().text().trim();
+    const metaTitle = $("title").text().trim();
+
+    if (h1Text && h1Text.length <= 100) {
+      data.suggested_anchor_text = h1Text;
+    } else if (metaTitle) {
+      // Clean up meta title - remove common separators and site names
+      const cleanTitle = metaTitle
+        .split(/[\|\-–—]/)[0]
+        .trim()
+        .substring(0, 100);
+      if (cleanTitle) {
+        data.suggested_anchor_text = cleanTitle;
+      }
+    }
 
     return NextResponse.json({ data, website_url: normalizedUrl });
   } catch (error) {
