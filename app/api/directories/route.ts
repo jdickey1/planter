@@ -16,6 +16,7 @@ interface Directory {
   is_premium: boolean;
   instructions: string | null;
   submission_url: string | null;
+  anchor_text_field: string;
   industries: string[];
 }
 
@@ -38,6 +39,7 @@ export async function GET(request: Request) {
         d.id, d.name, d.slug, d.url, d.da_score, d.dr_score,
         d.difficulty, d.submission_type, d.avg_approval_days,
         d.is_free, d.is_premium, d.instructions, d.submission_url,
+        d.anchor_text_field,
         COALESCE(
           (SELECT array_agg(i.name)
            FROM directory_industries di
@@ -100,10 +102,17 @@ export async function GET(request: Request) {
       FROM directories WHERE is_active = true
     `);
 
+    // Get user's business data for anchor text suggestions
+    const businessData = await query<{ target_anchor_text: string; secondary_anchor_texts: string[] }>(
+      `SELECT target_anchor_text, secondary_anchor_texts FROM businesses WHERE user_id = $1`,
+      [session.id]
+    );
+
     return NextResponse.json({
       directories,
       industries,
-      stats: stats[0] || { total: 0, premium: 0, easy: 0, medium: 0, hard: 0 }
+      stats: stats[0] || { total: 0, premium: 0, easy: 0, medium: 0, hard: 0 },
+      business: businessData[0] || { target_anchor_text: "", secondary_anchor_texts: [] }
     });
   } catch (error) {
     console.error("Get directories error:", error);

@@ -18,7 +18,13 @@ interface Directory {
   is_premium: boolean;
   instructions: string | null;
   submission_url: string | null;
+  anchor_text_field: string;
   industries: string[];
+}
+
+interface Business {
+  target_anchor_text: string;
+  secondary_anchor_texts: string[];
 }
 
 interface Industry {
@@ -39,8 +45,10 @@ export default function DirectoriesPage() {
   const [directories, setDirectories] = useState<Directory[]>([]);
   const [industries, setIndustries] = useState<Industry[]>([]);
   const [stats, setStats] = useState<Stats>({ total: 0, premium: 0, easy: 0, medium: 0, hard: 0 });
+  const [business, setBusiness] = useState<Business>({ target_anchor_text: "", secondary_anchor_texts: [] });
   const [loading, setLoading] = useState(true);
   const [selectedDirectory, setSelectedDirectory] = useState<Directory | null>(null);
+  const [copiedText, setCopiedText] = useState<string | null>(null);
 
   // Filters
   const [difficulty, setDifficulty] = useState("all");
@@ -69,6 +77,7 @@ export default function DirectoriesPage() {
       setDirectories(data.directories || []);
       setIndustries(data.industries || []);
       setStats(data.stats || { total: 0, premium: 0, easy: 0, medium: 0, hard: 0 });
+      setBusiness(data.business || { target_anchor_text: "", secondary_anchor_texts: [] });
     } catch (error) {
       console.error("Load directories error:", error);
     } finally {
@@ -86,6 +95,49 @@ export default function DirectoriesPage() {
       case "medium": return { bg: "rgba(234,179,8,0.1)", text: "#ca8a04" };
       case "hard": return { bg: "rgba(239,68,68,0.1)", text: "#dc2626" };
       default: return { bg: "rgba(100,116,139,0.1)", text: "#64748b" };
+    }
+  };
+
+  const getAnchorTextTip = (anchorTextField: string) => {
+    const targetText = business.target_anchor_text || "your target keywords";
+
+    switch (anchorTextField) {
+      case "business_name":
+        return {
+          message: "This directory uses your business name as link text. Consider updating your business name to include keywords.",
+          suggestedText: null,
+          showCopy: false
+        };
+      case "description":
+        return {
+          message: "This directory uses your description as link text. Start your description with your target anchor text for maximum SEO impact.",
+          suggestedText: targetText,
+          showCopy: true
+        };
+      case "custom":
+        return {
+          message: "You can set custom anchor text! Use your target anchor text for best results.",
+          suggestedText: targetText,
+          showCopy: true
+        };
+      case "none":
+        return {
+          message: "This directory doesn't allow custom link text. The backlink value comes from the domain authority alone.",
+          suggestedText: null,
+          showCopy: false
+        };
+      default:
+        return null;
+    }
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedText(text);
+      setTimeout(() => setCopiedText(null), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
     }
   };
 
@@ -389,6 +441,42 @@ export default function DirectoriesPage() {
                   </div>
                 </div>
               )}
+
+              {/* Anchor Text Tip */}
+              {(() => {
+                const anchorTip = getAnchorTextTip(selectedDirectory.anchor_text_field);
+                if (!anchorTip) return null;
+
+                return (
+                  <div className="mb-6 p-4 rounded-lg" style={{ background: "rgba(34,197,94,0.05)", border: "1px solid rgba(34,197,94,0.2)" }}>
+                    <div className="flex items-start gap-2 mb-2">
+                      <svg className="w-5 h-5 text-[#22C55E] flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <div className="flex-1">
+                        <h3 className="text-sm font-medium text-slate-900 mb-1">Anchor Text Tip</h3>
+                        <p className="text-sm text-slate-600">{anchorTip.message}</p>
+                      </div>
+                    </div>
+                    {anchorTip.showCopy && anchorTip.suggestedText && (
+                      <div className="mt-3 flex items-center gap-2 p-3 rounded bg-white border border-slate-200">
+                        <span className="text-sm font-medium text-slate-700 flex-1">{anchorTip.suggestedText}</span>
+                        <button
+                          onClick={() => copyToClipboard(anchorTip.suggestedText!)}
+                          className="px-3 py-1.5 text-xs font-medium rounded transition-colors"
+                          style={{
+                            background: copiedText === anchorTip.suggestedText ? "#22C55E" : "transparent",
+                            color: copiedText === anchorTip.suggestedText ? "white" : "#22C55E",
+                            border: copiedText === anchorTip.suggestedText ? "none" : "1px solid #22C55E"
+                          }}
+                        >
+                          {copiedText === anchorTip.suggestedText ? "Copied!" : "Copy"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Action button */}
               {selectedDirectory.submission_url && (
