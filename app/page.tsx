@@ -9,7 +9,7 @@ export default function Home() {
           <div className="flex justify-between items-center h-20">
             <Link href="/" className="font-display text-2xl font-bold tracking-tight no-underline flex-shrink-0">
               <span className="text-[#0F172A]">Link</span>
-              <span className="text-[#22C55E]">Planter</span>
+              <span className="text-[#16a34a]">Planter</span>
             </Link>
 
             <div className="hidden md:flex items-center gap-10">
@@ -42,7 +42,7 @@ export default function Home() {
                 className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full"
                 style={{background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)"}}
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#16a34a] animate-pulse" />
                 <span className="text-[13px] font-semibold text-[#16a34a] tracking-wide uppercase">Now Live</span>
               </span>
               <span className="text-[#cbd5e1] text-sm">100+ directories • 50+ industries</span>
@@ -50,7 +50,7 @@ export default function Home() {
 
             <h1 className="font-display text-[3.25rem] sm:text-[4rem] lg:text-[5rem] leading-[1.05] font-bold text-[#0F172A] tracking-tight mb-8">
               Stop chasing backlinks.<br />
-              <span className="text-[#22C55E]">Start planting them.</span>
+              <span className="text-[#16a34a]">Start planting them.</span>
             </h1>
 
             <p className="text-xl lg:text-2xl text-[#475569] leading-relaxed mb-10 max-w-2xl">
@@ -59,7 +59,7 @@ export default function Home() {
             </p>
 
             <div className="flex flex-wrap gap-4 mb-14">
-              <Link href="/register" className="group bg-[#22C55E] hover:bg-[#16a34a] text-white px-8 py-4 rounded-xl text-lg font-semibold transition-all shadow-lg hover:shadow-xl" style={{boxShadow: "0 10px 25px -5px rgba(34,197,94,0.25)"}}>
+              <Link href="/register" className="group bg-[#16a34a] hover:bg-[#15803d] text-white px-8 py-4 rounded-xl text-lg font-semibold transition-all shadow-lg hover:shadow-xl" style={{boxShadow: "0 10px 25px -5px rgba(34,197,94,0.25)"}}>
                 Plant your first links free →
               </Link>
               <a href="#how" className="px-8 py-4 rounded-xl text-lg font-semibold text-[#0F172A] border-2 border-[#e2e8f0] hover:border-[#94a3b8] transition-colors">
@@ -69,15 +69,15 @@ export default function Home() {
 
             <div className="flex flex-wrap items-center gap-x-8 gap-y-3 text-sm text-[#64748b]">
               <span className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-[#22C55E] flex items-center justify-center text-white text-xs font-bold">✓</span>
+                <span className="w-5 h-5 rounded-full bg-[#16a34a] flex items-center justify-center text-white text-xs font-bold">✓</span>
                 No credit card required
               </span>
               <span className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-[#22C55E] flex items-center justify-center text-white text-xs font-bold">✓</span>
+                <span className="w-5 h-5 rounded-full bg-[#16a34a] flex items-center justify-center text-white text-xs font-bold">✓</span>
                 Instant backlinks on sign up
               </span>
               <span className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-[#22C55E] flex items-center justify-center text-white text-xs font-bold">✓</span>
+                <span className="w-5 h-5 rounded-full bg-[#16a34a] flex items-center justify-center text-white text-xs font-bold">✓</span>
                 Cancel anytime
               </span>
             </div>
@@ -92,7 +92,7 @@ export default function Home() {
             <div>
               <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold text-white leading-tight mb-8">
                 Other tools help you knock on doors.<br />
-                <span className="text-[#22C55E]">We hand you the keys.</span>
+                <span className="text-[#16a34a]">We hand you the keys.</span>
               </h2>
               <div className="space-y-6 text-lg text-[#cbd5e1]">
                 <p>
@@ -127,9 +127,9 @@ export default function Home() {
                     backdropFilter: "blur(8px)"
                   }}
                 >
-                  <div className="font-display text-3xl lg:text-4xl font-bold text-[#22C55E] mb-2">{stat.value}</div>
+                  <div className="font-display text-3xl lg:text-4xl font-bold text-[#16a34a] mb-2">{stat.value}</div>
                   <div className="text-white font-medium mb-1">{stat.label}</div>
-                  <div className="text-sm text-[#64748b]">{stat.sublabel}</div>
+                  <div className="text-sm text-[#94a3b8]">{stat.sublabel}</div>
                 </div>
               ))}
             </div>
@@ -170,7 +170,7 @@ export default function Home() {
               <div key={item.step} className="relative">
                 <div className="bg-white rounded-2xl p-8 lg:p-10 border border-[#e2e8f0] hover:shadow-xl hover:-translate-y-1 transition-all h-full">
                   <div
-                    className="w-14 h-14 rounded-xl text-[#22C55E] flex items-center justify-center mb-6 font-display font-bold text-xl"
+                    className="w-14 h-14 rounded-xl text-[#16a34a] flex items-center justify-center mb-6 font-display font-bold text-xl"
                     style={{background: "rgba(34,197,94,0.1)"}}
                   >
                     {item.step}
@@ -207,7 +207,7 @@ export default function Home() {
                   "Permanent listings (as long as you are subscribed)",
                 ].map((item) => (
                   <li key={item} className="flex items-start gap-3 text-[#0F172A]">
-                    <span className="w-6 h-6 rounded-full bg-[#22C55E] flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5">✓</span>
+                    <span className="w-6 h-6 rounded-full bg-[#16a34a] flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5">✓</span>
                     <span className="text-lg">{item}</span>
                   </li>
                 ))}
@@ -303,7 +303,7 @@ export default function Home() {
             {/* Pro */}
             <div className="bg-[#0F172A] rounded-2xl p-10 relative overflow-hidden">
               <div className="absolute top-6 right-6">
-                <span className="px-3 py-1 rounded-full bg-[#22C55E] text-white text-sm font-semibold">Best value</span>
+                <span className="px-3 py-1 rounded-full bg-[#16a34a] text-white text-sm font-semibold">Best value</span>
               </div>
               <div className="mb-8">
                 <h3 className="font-display text-2xl font-bold text-[#ffffff] mb-2">Pro</h3>
@@ -312,7 +312,7 @@ export default function Home() {
               <div className="mb-8">
                 <span className="font-display text-5xl font-bold text-[#ffffff]">$99</span>
                 <span className="text-[#cbd5e1] ml-2">/year</span>
-                <p className="text-[#22C55E] text-sm mt-2">That is just $8.25/month</p>
+                <p className="text-[#16a34a] text-sm mt-2">That is just $8.25/month</p>
               </div>
               <ul className="space-y-4 mb-10">
                 {[
@@ -324,12 +324,12 @@ export default function Home() {
                   "Priority support",
                 ].map((f) => (
                   <li key={f} className="flex items-start gap-3 text-[#e2e8f0]">
-                    <span className="w-5 h-5 rounded-full bg-[#22C55E] flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5">✓</span>
+                    <span className="w-5 h-5 rounded-full bg-[#16a34a] flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5">✓</span>
                     {f}
                   </li>
                 ))}
               </ul>
-              <Link href="/register?plan=pro" className="block w-full py-4 rounded-xl bg-[#22C55E] hover:bg-[#16a34a] text-center font-semibold text-white transition-colors">
+              <Link href="/register?plan=pro" className="block w-full py-4 rounded-xl bg-[#16a34a] hover:bg-[#15803d] text-center font-semibold text-white transition-colors">
                 Start 7-day free trial
               </Link>
             </div>
@@ -346,7 +346,7 @@ export default function Home() {
         <div className="relative max-w-4xl mx-auto px-6 lg:px-8 text-center">
           <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-6">
             Your competitors are building backlinks.<br />
-            <span className="text-[#22C55E]">Are you?</span>
+            <span className="text-[#16a34a]">Are you?</span>
           </h2>
           <p className="text-xl text-[#cbd5e1] mb-10 max-w-2xl mx-auto">
             Every day you wait is another day they are pulling ahead in search rankings.
@@ -354,7 +354,7 @@ export default function Home() {
           </p>
           <Link
             href="/register"
-            className="inline-flex bg-[#22C55E] hover:bg-[#16a34a] text-white px-10 py-4 rounded-xl text-lg font-semibold transition-all hover:shadow-xl"
+            className="inline-flex bg-[#16a34a] hover:bg-[#15803d] text-white px-10 py-4 rounded-xl text-lg font-semibold transition-all hover:shadow-xl"
             style={{boxShadow: "0 10px 25px -5px rgba(34,197,94,0.25)"}}
           >
             Start planting links free →
@@ -369,14 +369,14 @@ export default function Home() {
             <div className="col-span-2 md:col-span-1">
               <div className="font-display text-xl font-bold mb-4">
                 <span className="text-white">Link</span>
-                <span className="text-[#22C55E]">Planter</span>
+                <span className="text-[#16a34a]">Planter</span>
               </div>
-              <p className="text-[#64748b] text-sm leading-relaxed">
+              <p className="text-[#94a3b8] text-sm leading-relaxed">
                 Build backlinks that matter.<br />Grow your search rankings.
               </p>
             </div>
             <div>
-              <h4 className="text-white font-semibold mb-4">Product</h4>
+              <h2 className="text-white font-semibold mb-4 text-base">Product</h2>
               <ul className="space-y-3 text-sm">
                 <li><a href="#why" className="text-[#cbd5e1] hover:text-white transition-colors">Why LinkPlanter</a></li>
                 <li><a href="#how" className="text-[#cbd5e1] hover:text-white transition-colors">How It Works</a></li>
@@ -384,7 +384,7 @@ export default function Home() {
               </ul>
             </div>
             <div>
-              <h4 className="text-white font-semibold mb-4">Company</h4>
+              <h2 className="text-white font-semibold mb-4 text-base">Company</h2>
               <ul className="space-y-3 text-sm">
                 <li><a href="#" className="text-[#cbd5e1] hover:text-white transition-colors">About</a></li>
                 <li><a href="#" className="text-[#cbd5e1] hover:text-white transition-colors">Blog</a></li>
@@ -392,14 +392,14 @@ export default function Home() {
               </ul>
             </div>
             <div>
-              <h4 className="text-white font-semibold mb-4">Legal</h4>
+              <h2 className="text-white font-semibold mb-4 text-base">Legal</h2>
               <ul className="space-y-3 text-sm">
                 <li><a href="#" className="text-[#cbd5e1] hover:text-white transition-colors">Privacy</a></li>
                 <li><a href="#" className="text-[#cbd5e1] hover:text-white transition-colors">Terms</a></li>
               </ul>
             </div>
           </div>
-          <div className="pt-8 text-center text-[#64748b] text-sm" style={{borderTop: "1px solid rgba(255,255,255,0.1)"}}>
+          <div className="pt-8 text-center text-[#94a3b8] text-sm" style={{borderTop: "1px solid rgba(255,255,255,0.1)"}}>
             © 2025 LinkPlanter. All rights reserved.
           </div>
         </div>
