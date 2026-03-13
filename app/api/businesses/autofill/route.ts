@@ -2,6 +2,22 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import * as cheerio from "cheerio";
 
+function isAllowedUrl(urlString: string): boolean {
+  try {
+    const url = new URL(urlString);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return false;
+    const hostname = url.hostname;
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") return false;
+    if (hostname.startsWith("10.") || hostname.startsWith("192.168.") || hostname.startsWith("172.")) return false;
+    if (hostname === "169.254.169.254") return false;
+    if (hostname.endsWith(".internal") || hostname.endsWith(".local")) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+
 export async function POST(request: Request) {
   try {
     const session = await getSession();
@@ -19,6 +35,11 @@ export async function POST(request: Request) {
     let normalizedUrl = url.trim();
     if (!normalizedUrl.startsWith("http://") && !normalizedUrl.startsWith("https://")) {
       normalizedUrl = "https://" + normalizedUrl;
+    }
+
+    // Validate URL to prevent SSRF
+    if (!isAllowedUrl(normalizedUrl)) {
+      return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
     }
 
     // Fetch the website
