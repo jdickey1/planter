@@ -4,7 +4,10 @@ import { cookies } from "next/headers";
 import { query, queryOne } from "./db";
 import crypto from "crypto";
 
-const AUTH_SECRET = process.env.AUTH_SECRET || "dev-secret-change-in-production";
+if (!process.env.AUTH_SECRET) {
+  throw new Error('AUTH_SECRET environment variable is required');
+}
+const AUTH_SECRET = process.env.AUTH_SECRET;
 const COOKIE_NAME = "linkplanter_session";
 
 // Types
