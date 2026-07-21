@@ -1,8 +1,23 @@
 import { NextResponse } from "next/server";
 import { getUserByEmail, verifyPassword, setSessionCookie, toSessionUser } from "@/lib/auth";
 
+import { rateLimitByIP } from "@/lib/rate-limit";
+import { validateOrigin } from "@/lib/csrf";
+
+const ALLOWED_ORIGINS = ["https://linkplanter.com", "https://www.linkplanter.com"];
+
 export async function POST(request: Request) {
   try {
+  if (!validateOrigin(request, ALLOWED_ORIGINS)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { success: rlOk } = rateLimitByIP(request, "login", 5, 900000);
+  if (!rlOk) {
+    return NextResponse.json({ error: "Too many attempts. Try again later." }, { status: 429 });
+  }
+
+
     const { email, password } = await request.json();
 
     // Validation

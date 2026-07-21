@@ -45,7 +45,7 @@ export default function Home() {
                 <span className="w-1.5 h-1.5 rounded-full bg-[#16a34a] animate-pulse" />
                 <span className="text-[13px] font-semibold text-[#16a34a] tracking-wide uppercase">Now Live</span>
               </span>
-              <span className="text-[#cbd5e1] text-sm">100+ directories • 50+ industries</span>
+              <span className="text-[#475569] text-sm">100+ directories • 50+ industries</span>
             </div>
 
             <h1 className="font-display text-[3.25rem] sm:text-[4rem] lg:text-[5rem] leading-[1.05] font-bold text-[#0F172A] tracking-tight mb-8">
@@ -67,7 +67,7 @@ export default function Home() {
               </a>
             </div>
 
-            <div className="flex flex-wrap items-center gap-x-8 gap-y-3 text-sm text-[#64748b]">
+            <div className="flex flex-wrap items-center gap-x-8 gap-y-3 text-sm text-[#475569]">
               <span className="flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-[#16a34a] flex items-center justify-center text-white text-xs font-bold">✓</span>
                 No credit card required
@@ -144,7 +144,7 @@ export default function Home() {
             <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold text-[#0F172A] mb-6">
               Three steps to stronger rankings
             </h2>
-            <p className="text-xl text-[#64748b] max-w-2xl mx-auto">
+            <p className="text-xl text-[#475569] max-w-2xl mx-auto">
               Stop spending hours on manual submissions. Get your business listed across quality directories in minutes.
             </p>
           </div>
@@ -176,7 +176,7 @@ export default function Home() {
                     {item.step}
                   </div>
                   <h3 className="font-display text-2xl font-bold text-[#0F172A] mb-4">{item.title}</h3>
-                  <p className="text-[#64748b] leading-relaxed">{item.description}</p>
+                  <p className="text-[#475569] leading-relaxed">{item.description}</p>
                 </div>
               </div>
             ))}
@@ -195,7 +195,7 @@ export default function Home() {
               <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold text-[#0F172A] leading-tight mb-6">
                 Backlinks you can count on
               </h2>
-              <p className="text-xl text-[#64748b] mb-8">
+              <p className="text-xl text-[#475569] mb-8">
                 The LinkPlanter Directory Network is our secret weapon. These are real, indexed sites with
                 actual domain authority—and you get listed on every single one the moment you upgrade to Pro.
               </p>
@@ -226,7 +226,7 @@ export default function Home() {
                   </div>
                   <div>
                     <h3 className="font-display text-xl font-bold text-[#0F172A]">LinkPlanter Network</h3>
-                    <p className="text-[#64748b]">Your guaranteed backlinks</p>
+                    <p className="text-[#475569]">Your guaranteed backlinks</p>
                   </div>
                 </div>
                 <div className="space-y-5">
@@ -237,14 +237,14 @@ export default function Home() {
                     { label: "Approval time", value: "Instant" },
                   ].map((row) => (
                     <div key={row.label} className="flex justify-between items-center">
-                      <span className="text-[#64748b]">{row.label}</span>
+                      <span className="text-[#475569]">{row.label}</span>
                       <span className="font-semibold text-[#0F172A]">{row.value}</span>
                     </div>
                   ))}
                 </div>
                 <div className="mt-8 pt-6 border-t border-[#f1f5f9]">
                   <div className="flex items-center justify-between">
-                    <span className="text-[#64748b]">Pro members</span>
+                    <span className="text-[#475569]">Pro members</span>
                     <span
                       className="px-3 py-1 rounded-full text-[#16a34a] font-semibold text-sm"
                       style={{background: "rgba(34,197,94,0.1)"}}
@@ -266,7 +266,7 @@ export default function Home() {
             <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold text-[#0F172A] mb-6">
               Pricing that makes sense
             </h2>
-            <p className="text-xl text-[#64748b] max-w-2xl mx-auto">
+            <p className="text-xl text-[#475569] max-w-2xl mx-auto">
               Start free. Upgrade when you are ready to go all-in on your backlink strategy.
             </p>
           </div>
@@ -276,11 +276,11 @@ export default function Home() {
             <div className="bg-white rounded-2xl border-2 border-[#e2e8f0] p-10">
               <div className="mb-8">
                 <h3 className="font-display text-2xl font-bold text-[#0F172A] mb-2">Free</h3>
-                <p className="text-[#64748b]">Perfect for getting started</p>
+                <p className="text-[#475569]">Perfect for getting started</p>
               </div>
               <div className="mb-8">
                 <span className="font-display text-5xl font-bold text-[#0F172A]">$0</span>
-                <span className="text-[#64748b] ml-2">/month</span>
+                <span className="text-[#475569] ml-2">/month</span>
               </div>
               <ul className="space-y-4 mb-10">
                 {[
@@ -290,7 +290,7 @@ export default function Home() {
                   "Nofollow network listing",
                 ].map((f) => (
                   <li key={f} className="flex items-start gap-3 text-[#475569]">
-                    <span className="w-5 h-5 rounded-full bg-[#e2e8f0] flex items-center justify-center text-[#64748b] text-xs font-bold flex-shrink-0 mt-0.5">✓</span>
+                    <span className="w-5 h-5 rounded-full bg-[#e2e8f0] flex items-center justify-center text-[#475569] text-xs font-bold flex-shrink-0 mt-0.5">✓</span>
                     {f}
                   </li>
                 ))}
@@ -335,7 +335,7 @@ export default function Home() {
             </div>
           </div>
 
-          <p className="text-center mt-10 text-[#64748b]">
+          <p className="text-center mt-10 text-[#475569]">
             30-day money-back guarantee. No questions asked.
           </p>
         </div>

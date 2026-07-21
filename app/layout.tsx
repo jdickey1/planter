@@ -3,6 +3,7 @@ import "./globals.css";
 import Script from "next/script";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://linkplanter.com"),
   title: "LinkPlanter - Plant Links. Grow Rankings.",
   description: "Build powerful backlinks by submitting your business to 100+ web directories. Smart recommendations, campaign tracking, and your own directory listings. Start free, grow fast.",
   keywords: "directory submission, backlinks, SEO, local SEO, business directories, link building, search rankings",
