@@ -1,16 +1,140 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import * as cheerio from "cheerio";
+import { promises as dns } from "dns";
 
-function isAllowedUrl(urlString: string): boolean {
+function isPrivateIp(ip: string): boolean {
+  // Strip IPv6 brackets if present
+  const addr = ip.replace(/^\[|\]$/g, "");
+
+  // --- IPv4 checks ---
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(addr)) {
+    if (addr === "0.0.0.0") return true;
+    if (addr.startsWith("127.")) return true;
+    if (addr.startsWith("10.")) return true;
+    if (addr.startsWith("192.168.")) return true;
+    if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(addr)) return true;
+    if (addr.startsWith("169.254.")) return true; // link-local / cloud metadata
+    if (addr.startsWith("100.64.") || addr.startsWith("100.65.") ||
+        addr.startsWith("100.66.") || addr.startsWith("100.67.") ||
+        addr.startsWith("100.68.") || addr.startsWith("100.69.") ||
+        addr.startsWith("100.70.") || addr.startsWith("100.71.") ||
+        addr.startsWith("100.72.") || addr.startsWith("100.73.") ||
+        addr.startsWith("100.74.") || addr.startsWith("100.75.") ||
+        addr.startsWith("100.76.") || addr.startsWith("100.77.") ||
+        addr.startsWith("100.78.") || addr.startsWith("100.79.") ||
+        addr.startsWith("100.80.") || addr.startsWith("100.81.") ||
+        addr.startsWith("100.82.") || addr.startsWith("100.83.") ||
+        addr.startsWith("100.84.") || addr.startsWith("100.85.") ||
+        addr.startsWith("100.86.") || addr.startsWith("100.87.") ||
+        addr.startsWith("100.88.") || addr.startsWith("100.89.") ||
+        addr.startsWith("100.90.") || addr.startsWith("100.91.") ||
+        addr.startsWith("100.92.") || addr.startsWith("100.93.") ||
+        addr.startsWith("100.94.") || addr.startsWith("100.95.") ||
+        addr.startsWith("100.96.") || addr.startsWith("100.97.") ||
+        addr.startsWith("100.98.") || addr.startsWith("100.99.") ||
+        addr.startsWith("100.10") || addr.startsWith("100.11") ||
+        addr.startsWith("100.12") || addr.startsWith("100.127.")) return true; // CGNAT
+    if (addr.startsWith("198.18.") || addr.startsWith("198.19.")) return true; // benchmark
+    if (addr.startsWith("240.") || addr.startsWith("255.")) return true; // reserved
+    return false;
+  }
+
+  // --- IPv6 checks ---
+  const lower = addr.toLowerCase();
+
+  // Loopback ::1
+  if (lower === "::1" || lower === "0:0:0:0:0:0:0:1") return true;
+
+  // Unspecified ::
+  if (lower === "::" || lower === "0:0:0:0:0:0:0:0") return true;
+
+  // IPv4-mapped/compatible ::ffff:x.x.x.x
+  if (lower.startsWith("::ffff:")) return true;
+
+  // Link-local fe80::/10
+  if (lower.startsWith("fe80:") || lower.startsWith("fe9") ||
+      lower.startsWith("fea") || lower.startsWith("feb")) return true;
+
+  // Site-local (deprecated) fec0::/10
+  if (lower.startsWith("fec") || lower.startsWith("fed") ||
+      lower.startsWith("fee") || lower.startsWith("fef")) return true;
+
+  // ULA fc00::/7 (fc00:: and fd00::)
+  if (lower.startsWith("fc") || lower.startsWith("fd")) return true;
+
+  // IPv6 cloud metadata (AWS uses fd00:ec2::254, GCP uses similar)
+  if (lower.startsWith("fd00:ec2:") || lower.startsWith("fd00:")) return true;
+
+  // Multicast ff00::/8
+  if (lower.startsWith("ff")) return true;
+
+  return false;
+}
+
+async function isAllowedUrlWithDnsCheck(urlString: string): Promise<boolean> {
   try {
     const url = new URL(urlString);
     if (url.protocol !== "https:" && url.protocol !== "http:") return false;
-    const hostname = url.hostname;
+    const hostname = url.hostname.replace(/^\[|\]$/g, ""); // strip IPv6 brackets
+
+    // Block localhost variants
     if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") return false;
-    if (hostname.startsWith("10.") || hostname.startsWith("192.168.") || hostname.startsWith("172.")) return false;
-    if (hostname === "169.254.169.254") return false;
+
+    // Block IPv6 loopback and mapped addresses (hostname-level check)
+    if (hostname === "::1" || hostname === "::ffff:127.0.0.1" || hostname.startsWith("::ffff:")) return false;
+    if (hostname === "0:0:0:0:0:0:0:1") return false;
+
+    // Block 0.0.0.0/8 range (all zeroes prefix)
+    if (/^0\./.test(hostname)) return false;
+
+    // Block RFC1918 private ranges (hostname-level)
+    if (hostname.startsWith("10.") || hostname.startsWith("192.168.")) return false;
+    if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname)) return false;
+
+    // Block link-local / cloud metadata IP (hostname-level)
+    if (hostname.startsWith("169.254.")) return false;
+
+    // Block IPv6 link-local, ULA, and private ranges at hostname level
+    const lowerHost = hostname.toLowerCase();
+    if (lowerHost.startsWith("fe80:") || lowerHost.startsWith("fc") ||
+        lowerHost.startsWith("fd") || lowerHost.startsWith("ff")) return false;
+
+    // Block short-form IP tricks (hex, octal, decimal integer)
+    if (/^\d+$/.test(hostname)) return false;         // decimal integer like 2130706433
+    if (/^0x[0-9a-f]+$/i.test(hostname)) return false; // hex 0x7f000001
+    if (/^0[0-7]/.test(hostname)) return false;        // octal 0177.0.0.1
+
+    // Block internal/local TLDs
     if (hostname.endsWith(".internal") || hostname.endsWith(".local")) return false;
+    if (hostname.endsWith(".localhost")) return false;
+
+    // DNS rebinding protection: resolve hostname and verify resolved IPs are public
+    // Skip DNS check for literal IPs (already validated above)
+    if (!/^[\d.]+$/.test(hostname) && !hostname.includes(":")) {
+      try {
+        const [ipv4Results, ipv6Results] = await Promise.allSettled([
+          dns.resolve4(hostname),
+          dns.resolve6(hostname),
+        ]);
+
+        const resolvedIps: string[] = [];
+        if (ipv4Results.status === "fulfilled") resolvedIps.push(...ipv4Results.value);
+        if (ipv6Results.status === "fulfilled") resolvedIps.push(...ipv6Results.value);
+
+        // If we can't resolve at all, allow (may be valid but DNS unavailable)
+        if (resolvedIps.length === 0) return true;
+
+        // Reject if ANY resolved IP is private/internal
+        for (const ip of resolvedIps) {
+          if (isPrivateIp(ip)) return false;
+        }
+      } catch {
+        // DNS lookup failed entirely — allow to avoid blocking legitimate sites
+        return true;
+      }
+    }
+
     return true;
   } catch {
     return false;
@@ -37,8 +161,8 @@ export async function POST(request: Request) {
       normalizedUrl = "https://" + normalizedUrl;
     }
 
-    // Validate URL to prevent SSRF
-    if (!isAllowedUrl(normalizedUrl)) {
+    // Validate URL to prevent SSRF (includes DNS rebinding check)
+    if (!(await isAllowedUrlWithDnsCheck(normalizedUrl))) {
       return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
     }
 
@@ -49,6 +173,7 @@ export async function POST(request: Request) {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
       redirect: "follow",
+      signal: AbortSignal.timeout(10000),
     });
 
     if (!response.ok) {
