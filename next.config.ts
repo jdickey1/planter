@@ -7,10 +7,8 @@ const nextConfig: NextConfig = {
   
   images: {
     remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "**",
-      },
+      { protocol: "https", hostname: "linkplanter.com" },
+      { protocol: "https", hostname: "www.linkplanter.com" },
     ],
   },
 };

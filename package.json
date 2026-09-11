@@ -13,17 +13,19 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "tsx --experimental-test-module-mocks --test app/api/businesses/autofill/route.test.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cheerio": "^1.1.2",
     "cookie": "^1.1.1",
     "jsonwebtoken": "^9.0.3",
-    "next": "16.1.0",
+    "next": "16.3.3",
     "pg": "^8.16.3",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "sharp": "0.35.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -37,6 +39,11 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "^5"
+  },
+  "overrides": {
+    "sharp": "$sharp",
+    "undici": "7.29.1"
   }
 }

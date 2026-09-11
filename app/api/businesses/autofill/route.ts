@@ -122,16 +122,16 @@ async function isAllowedUrlWithDnsCheck(urlString: string): Promise<boolean> {
         if (ipv4Results.status === "fulfilled") resolvedIps.push(...ipv4Results.value);
         if (ipv6Results.status === "fulfilled") resolvedIps.push(...ipv6Results.value);
 
-        // If we can't resolve at all, allow (may be valid but DNS unavailable)
-        if (resolvedIps.length === 0) return true;
+        // If we can't resolve at all, fail closed
+        if (resolvedIps.length === 0) return false;
 
         // Reject if ANY resolved IP is private/internal
         for (const ip of resolvedIps) {
           if (isPrivateIp(ip)) return false;
         }
       } catch {
-        // DNS lookup failed entirely — allow to avoid blocking legitimate sites
-        return true;
+        // DNS lookup failed entirely — fail closed
+        return false;
       }
     }
 
@@ -166,15 +166,47 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
     }
 
-    // Fetch the website
-    const response = await fetch(normalizedUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; LinkPlanter/1.0; +https://linkplanter.com)",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-      redirect: "follow",
+    const fetchHeaders = {
+      "User-Agent": "Mozilla/5.0 (compatible; LinkPlanter/1.0; +https://linkplanter.com)",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    };
+    const MAX_REDIRECTS = 3;
+    let currentUrl = normalizedUrl;
+    let response = await fetch(currentUrl, {
+      headers: fetchHeaders,
+      redirect: "manual",
       signal: AbortSignal.timeout(10000),
     });
+
+    for (
+      let hop = 0;
+      hop < MAX_REDIRECTS && response.status >= 300 && response.status < 400;
+      hop++
+    ) {
+      const location = response.headers.get("Location");
+      if (!location) {
+        return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
+      }
+      let nextUrl: string;
+      try {
+        nextUrl = new URL(location, currentUrl).href;
+      } catch {
+        return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
+      }
+      if (!(await isAllowedUrlWithDnsCheck(nextUrl))) {
+        return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
+      }
+      currentUrl = nextUrl;
+      response = await fetch(currentUrl, {
+        headers: fetchHeaders,
+        redirect: "manual",
+        signal: AbortSignal.timeout(10000),
+      });
+    }
+
+    if (response.status >= 300 && response.status < 400) {
+      return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
+    }
 
     if (!response.ok) {
       return NextResponse.json({ error: "Could not fetch website" }, { status: 400 });
