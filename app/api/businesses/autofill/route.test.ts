@@ -161,6 +161,18 @@ describe("POST /api/businesses/autofill", () => {
     );
   });
 
+  test("302 to 127.1.1.1 does not fetch loopback", async () => {
+    responses.set("https://example.com/", redirectTo("http://127.1.1.1/secret"));
+    responses.set("http://127.1.1.1/secret", html(INTERNAL_HTML));
+
+    const res = await post("https://example.com/");
+    await assertNoInternalHtml(res);
+    assert.equal(
+      fetchCalls.some((c) => c.url.includes("127.1.1.1")),
+      false,
+    );
+  });
+
   test("302 to RFC1918 does not return internal HTML", async () => {
     responses.set("https://example.com/", redirectTo("http://192.168.1.50/admin"));
     responses.set("http://192.168.1.50/admin", html(INTERNAL_HTML));

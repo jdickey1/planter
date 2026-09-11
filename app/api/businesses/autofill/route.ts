@@ -78,8 +78,8 @@ async function isAllowedUrlWithDnsCheck(urlString: string): Promise<boolean> {
     if (url.protocol !== "https:" && url.protocol !== "http:") return false;
     const hostname = url.hostname.replace(/^\[|\]$/g, ""); // strip IPv6 brackets
 
-    // Block localhost variants
-    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") return false;
+    // Block localhost variants and the rest of 127.0.0.0/8
+    if (hostname === "localhost" || hostname === "0.0.0.0" || hostname.startsWith("127.")) return false;
 
     // Block IPv6 loopback and mapped addresses (hostname-level check)
     if (hostname === "::1" || hostname === "::ffff:127.0.0.1" || hostname.startsWith("::ffff:")) return false;
@@ -109,9 +109,15 @@ async function isAllowedUrlWithDnsCheck(urlString: string): Promise<boolean> {
     if (hostname.endsWith(".internal") || hostname.endsWith(".local")) return false;
     if (hostname.endsWith(".localhost")) return false;
 
-    // DNS rebinding protection: resolve hostname and verify resolved IPs are public
-    // Skip DNS check for literal IPs (already validated above)
-    if (!/^[\d.]+$/.test(hostname) && !hostname.includes(":")) {
+    // Literal IPs: run isPrivateIp (covers 127.1.1.1 and other 127/8, CGNAT, etc.)
+    // Do not call isPrivateIp on hostnames (fd… ULA prefix false-positives).
+    const ipv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
+    if (ipv4 || hostname.includes(":")) {
+      if (isPrivateIp(hostname)) return false;
+    } else if (/^[\d.]+$/.test(hostname)) {
+      return false;
+    } else {
+      // DNS rebinding protection: resolve hostname and verify resolved IPs are public
       try {
         const [ipv4Results, ipv6Results] = await Promise.allSettled([
           dns.resolve4(hostname),
