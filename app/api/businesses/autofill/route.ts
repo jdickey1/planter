@@ -78,8 +78,8 @@ async function isAllowedUrlWithDnsCheck(urlString: string): Promise<boolean> {
     if (url.protocol !== "https:" && url.protocol !== "http:") return false;
     const hostname = url.hostname.replace(/^\[|\]$/g, ""); // strip IPv6 brackets
 
-    // Block localhost variants
-    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") return false;
+    // Block localhost variants and the rest of 127.0.0.0/8
+    if (hostname === "localhost" || hostname === "0.0.0.0" || hostname.startsWith("127.")) return false;
 
     // Block IPv6 loopback and mapped addresses (hostname-level check)
     if (hostname === "::1" || hostname === "::ffff:127.0.0.1" || hostname.startsWith("::ffff:")) return false;
@@ -109,9 +109,15 @@ async function isAllowedUrlWithDnsCheck(urlString: string): Promise<boolean> {
     if (hostname.endsWith(".internal") || hostname.endsWith(".local")) return false;
     if (hostname.endsWith(".localhost")) return false;
 
-    // DNS rebinding protection: resolve hostname and verify resolved IPs are public
-    // Skip DNS check for literal IPs (already validated above)
-    if (!/^[\d.]+$/.test(hostname) && !hostname.includes(":")) {
+    // Literal IPs: run isPrivateIp (covers 127.1.1.1 and other 127/8, CGNAT, etc.)
+    // Do not call isPrivateIp on hostnames (fd… ULA prefix false-positives).
+    const ipv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
+    if (ipv4 || hostname.includes(":")) {
+      if (isPrivateIp(hostname)) return false;
+    } else if (/^[\d.]+$/.test(hostname)) {
+      return false;
+    } else {
+      // DNS rebinding protection: resolve hostname and verify resolved IPs are public
       try {
         const [ipv4Results, ipv6Results] = await Promise.allSettled([
           dns.resolve4(hostname),
@@ -122,16 +128,16 @@ async function isAllowedUrlWithDnsCheck(urlString: string): Promise<boolean> {
         if (ipv4Results.status === "fulfilled") resolvedIps.push(...ipv4Results.value);
         if (ipv6Results.status === "fulfilled") resolvedIps.push(...ipv6Results.value);
 
-        // If we can't resolve at all, allow (may be valid but DNS unavailable)
-        if (resolvedIps.length === 0) return true;
+        // If we can't resolve at all, fail closed
+        if (resolvedIps.length === 0) return false;
 
         // Reject if ANY resolved IP is private/internal
         for (const ip of resolvedIps) {
           if (isPrivateIp(ip)) return false;
         }
       } catch {
-        // DNS lookup failed entirely — allow to avoid blocking legitimate sites
-        return true;
+        // DNS lookup failed entirely — fail closed
+        return false;
       }
     }
 
@@ -166,15 +172,47 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
     }
 
-    // Fetch the website
-    const response = await fetch(normalizedUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; LinkPlanter/1.0; +https://linkplanter.com)",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-      redirect: "follow",
+    const fetchHeaders = {
+      "User-Agent": "Mozilla/5.0 (compatible; LinkPlanter/1.0; +https://linkplanter.com)",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    };
+    const MAX_REDIRECTS = 3;
+    let currentUrl = normalizedUrl;
+    let response = await fetch(currentUrl, {
+      headers: fetchHeaders,
+      redirect: "manual",
       signal: AbortSignal.timeout(10000),
     });
+
+    for (
+      let hop = 0;
+      hop < MAX_REDIRECTS && response.status >= 300 && response.status < 400;
+      hop++
+    ) {
+      const location = response.headers.get("Location");
+      if (!location) {
+        return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
+      }
+      let nextUrl: string;
+      try {
+        nextUrl = new URL(location, currentUrl).href;
+      } catch {
+        return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
+      }
+      if (!(await isAllowedUrlWithDnsCheck(nextUrl))) {
+        return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
+      }
+      currentUrl = nextUrl;
+      response = await fetch(currentUrl, {
+        headers: fetchHeaders,
+        redirect: "manual",
+        signal: AbortSignal.timeout(10000),
+      });
+    }
+
+    if (response.status >= 300 && response.status < 400) {
+      return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
+    }
 
     if (!response.ok) {
       return NextResponse.json({ error: "Could not fetch website" }, { status: 400 });
