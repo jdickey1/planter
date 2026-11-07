@@ -21,11 +21,11 @@
     "cheerio": "^1.1.2",
     "cookie": "^1.1.1",
     "jsonwebtoken": "^9.0.3",
-    "next": "16.3.3",
+    "next": "16.4.5",
     "pg": "^8.16.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "sharp": "0.35.4"
+    "sharp": "0.35.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -37,13 +37,14 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.1.0",
+    "eslint-config-next": "16.4.5",
     "tailwindcss": "^4",
     "tsx": "^4.23.13",
     "typescript": "^5"
   },
   "overrides": {
     "sharp": "$sharp",
-    "undici": "7.29.1"
+    "source-map-js": "1.2.2",
+    "undici": "7.30.2"
   }
 }
