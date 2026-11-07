@@ -148,6 +148,21 @@ do_build() {
         exit 1
     fi
 
+    # Production audit gate. High and critical findings block the deploy.
+    # Emergency bypass: SKIP_AUDIT=1 ./deploy.sh <cmd>
+    if [ "${SKIP_AUDIT:-0}" = "1" ]; then
+        echo "WARNING: SKIP_AUDIT=1 set - BYPASSING npm audit gate (emergency override)"
+    else
+        echo "Audit gate: npm audit --omit=dev --audit-level=high ..."
+        if ! npm audit --omit=dev --audit-level=high; then
+            echo "DEPLOY BLOCKED: HIGH/CRITICAL vulnerabilities in production dependencies."
+            echo "  Fix: npm audit fix (or add package.json overrides), commit to origin/main, then redeploy."
+            echo "  Emergency bypass (use sparingly): SKIP_AUDIT=1 ./deploy.sh $COMMAND"
+            exit 1
+        fi
+        echo "Audit gate passed (0 high/critical in production deps)."
+    fi
+
     echo "🏗️  Building Next.js (standalone mode)..."
 
     NEXT_PUBLIC_SITE_URL=$SITE_URL \
