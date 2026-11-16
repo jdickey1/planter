@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
-import { query, queryOne } from "./db";
+import pool, { query, queryOne } from "./db";
 import crypto from "crypto";
 
 if (!process.env.AUTH_SECRET) {
@@ -20,6 +20,7 @@ export interface User {
   subscription_expires_at: Date | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  session_version: number;
   created_at: Date;
   updated_at: Date;
 }
@@ -45,21 +46,33 @@ export function generateToken(length: number = 32): string {
   return crypto.randomBytes(length).toString("hex");
 }
 
-// JWT session management
-export function createSessionToken(user: SessionUser): string {
-  return jwt.sign(user, AUTH_SECRET, { expiresIn: "7d" });
+// JWT session management.
+// The token carries only the user id and the user's session_version. Every
+// request re-reads the user row and rejects the token when the version no
+// longer matches, so logout and password reset revoke sessions server-side.
+interface SessionClaims {
+  id: number;
+  sv: number;
 }
 
-export function verifySessionToken(token: string): SessionUser | null {
+export function createSessionToken(user: Pick<User, "id" | "session_version">): string {
+  const claims: SessionClaims = { id: user.id, sv: user.session_version };
+  return jwt.sign(claims, AUTH_SECRET, { expiresIn: "7d" });
+}
+
+export function verifySessionToken(token: string): SessionClaims | null {
   try {
-    return jwt.verify(token, AUTH_SECRET) as SessionUser;
+    const payload = jwt.verify(token, AUTH_SECRET) as Partial<SessionClaims>;
+    // Tokens issued before session versions existed carry no `sv`: reject them.
+    if (typeof payload.id !== "number" || typeof payload.sv !== "number") return null;
+    return { id: payload.id, sv: payload.sv };
   } catch {
     return null;
   }
 }
 
 // Cookie-based session
-export async function setSessionCookie(user: SessionUser): Promise<void> {
+export async function setSessionCookie(user: User): Promise<void> {
   const token = createSessionToken(user);
   const cookieStore = await cookies();
   cookieStore.set(COOKIE_NAME, token, {
@@ -75,7 +88,22 @@ export async function getSession(): Promise<SessionUser | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;
   if (!token) return null;
-  return verifySessionToken(token);
+  const claims = verifySessionToken(token);
+  if (!claims) return null;
+  const user = await queryOne<User>(
+    `SELECT id, email, email_verified_at, subscription_status, session_version
+     FROM users WHERE id = $1 AND session_version = $2`,
+    [claims.id, claims.sv]
+  );
+  return user ? toSessionUser(user) : null;
+}
+
+// Invalidate every session the user holds (all devices).
+export async function revokeSessions(userId: number): Promise<void> {
+  await query(
+    "UPDATE users SET session_version = session_version + 1, updated_at = NOW() WHERE id = $1",
+    [userId]
+  );
 }
 
 export async function clearSession(): Promise<void> {
@@ -146,28 +174,46 @@ export async function createPasswordResetToken(userId: number): Promise<string> 
   return token;
 }
 
-export async function verifyPasswordResetToken(token: string): Promise<number | null> {
-  const result = await queryOne<{ user_id: number }>(
-    `SELECT user_id FROM password_reset_tokens 
-     WHERE token = $1 AND expires_at > NOW() AND used_at IS NULL`,
-    [token]
-  );
-  return result?.user_id || null;
-}
-
-export async function usePasswordResetToken(token: string): Promise<void> {
-  await query(
-    `UPDATE password_reset_tokens SET used_at = NOW() WHERE token = $1`,
-    [token]
-  );
-}
-
-export async function updatePassword(userId: number, newPassword: string): Promise<void> {
+// Consume a reset token and set the new password in one transaction. The
+// conditional UPDATE ... RETURNING claims the token atomically, so two
+// concurrent requests with the same token cannot both succeed. The password
+// change also bumps session_version (revoking existing sessions) and burns any
+// other outstanding reset tokens for the user. Returns the user id, or null
+// when the token is unknown, expired or already used.
+export async function resetPasswordWithToken(token: string, newPassword: string): Promise<number | null> {
+  // Hash outside the transaction: bcrypt is slow and must not hold row locks.
   const passwordHash = await hashPassword(newPassword);
-  await query(
-    "UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2",
-    [passwordHash, userId]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const claimed = await client.query<{ user_id: number }>(
+      `UPDATE password_reset_tokens SET used_at = NOW()
+       WHERE token = $1 AND expires_at > NOW() AND used_at IS NULL
+       RETURNING user_id`,
+      [token]
+    );
+    const userId = claimed.rows[0]?.user_id;
+    if (!userId) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    await client.query(
+      `UPDATE users SET password_hash = $1, session_version = session_version + 1, updated_at = NOW()
+       WHERE id = $2`,
+      [passwordHash, userId]
+    );
+    await client.query(
+      `UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = $1 AND used_at IS NULL`,
+      [userId]
+    );
+    await client.query("COMMIT");
+    return userId;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // Helper to convert User to SessionUser

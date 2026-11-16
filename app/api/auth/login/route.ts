@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getUserByEmail, verifyPassword, setSessionCookie, toSessionUser } from "@/lib/auth";
+import { getUserByEmail, verifyPassword, setSessionCookie } from "@/lib/auth";
 
 import { rateLimitByIP } from "@/lib/rate-limit";
 import { validateOrigin } from "@/lib/csrf";
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     }
 
     // Set session cookie
-    await setSessionCookie(toSessionUser(user));
+    await setSessionCookie(user);
 
     return NextResponse.json({
       success: true,

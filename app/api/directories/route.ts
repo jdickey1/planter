@@ -49,10 +49,21 @@ export async function GET(request: Request) {
         ) as industries
       FROM directories d
       WHERE d.is_active = true
+        AND (
+          d.is_premium = false
+          OR EXISTS (
+            SELECT 1 FROM users u
+            WHERE u.id = $1
+              AND u.subscription_status = 'paid'
+              AND (u.subscription_expires_at IS NULL OR u.subscription_expires_at > NOW())
+          )
+        )
     `;
 
-    const params: unknown[] = [];
-    let paramIndex = 1;
+    // Premium rows are gated on the user's current subscription row in SQL,
+    // independent of the client-supplied filters below and of the session claim.
+    const params: unknown[] = [session.id];
+    let paramIndex = 2;
 
     if (difficulty && difficulty !== "all") {
       sql += ` AND d.difficulty = $${paramIndex}`;

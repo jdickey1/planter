@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { verifyPasswordResetToken, usePasswordResetToken, updatePassword } from "@/lib/auth";
+import { resetPasswordWithToken } from "@/lib/auth";
 
 export async function POST(request: Request) {
   try {
     const { token, password } = await request.json();
 
-    if (!token || !password) {
+    if (!token || !password || typeof token !== "string" || typeof password !== "string") {
       return NextResponse.json(
         { error: "Token and password are required" },
         { status: 400 }
@@ -19,20 +19,14 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verify token
-    const userId = await verifyPasswordResetToken(token);
+    // Consume the token and set the password atomically; also revokes sessions.
+    const userId = await resetPasswordWithToken(token, password);
     if (!userId) {
       return NextResponse.json(
         { error: "Invalid or expired reset link" },
         { status: 400 }
       );
     }
-
-    // Update password
-    await updatePassword(userId, password);
-
-    // Mark token as used
-    await usePasswordResetToken(token);
 
     return NextResponse.json({
       success: true,
