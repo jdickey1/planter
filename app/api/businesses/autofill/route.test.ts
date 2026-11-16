@@ -5,6 +5,7 @@ import http from "node:http";
 import https from "node:https";
 import { isIP } from "node:net";
 import { Readable } from "node:stream";
+import zlib from "node:zlib";
 import { promises as dns } from "dns";
 
 process.env.AUTH_SECRET ??= "test-secret-autofill-ssrf-do-not-use";
@@ -40,6 +41,8 @@ mock.module("@/lib/auth", {
 });
 
 let POST: (request: Request) => Promise<Response>;
+let safeFetchHtml: typeof import("@/lib/safe-fetch").safeFetchHtml;
+let SafeFetchError: typeof import("@/lib/safe-fetch").SafeFetchError;
 
 // ---------------------------------------------------------------------------
 // Simulated network. Nothing in these tests touches the real network.
@@ -175,6 +178,7 @@ async function assertNoInternalHtml(res: Response, status = 400) {
 describe("POST /api/businesses/autofill", () => {
   before(async () => {
     ({ POST } = await import("./route.ts"));
+    ({ safeFetchHtml, SafeFetchError } = await import("@/lib/safe-fetch"));
   });
 
   beforeEach(() => {
@@ -361,6 +365,73 @@ describe("POST /api/businesses/autofill", () => {
     const res = await post("https://example.com/");
     assert.equal(res.status, 200);
     assert.equal((await res.json()).data.name, "Big Page");
+  });
+
+  // Compressed bodies: errors, stalls and the deadline must reach the reader
+  // through the decompressor, and the cap counts decompressed bytes.
+  const fetchOpts = (timeoutMs: number, maxBytes = 2 * 1024 * 1024) => ({
+    headers: {}, maxRedirects: 3, maxBytes, timeoutMs,
+  });
+  const gzipHeaders = { "content-type": "text/html", "content-encoding": "gzip" };
+  const isNetworkError = (err: unknown) =>
+    err instanceof SafeFetchError && err.reason === "network";
+
+  test("gzip body that stalls after the first chunk is aborted at the deadline", { timeout: 5000 }, async () => {
+    const gz = zlib.gzipSync(Buffer.from("<html><title>Stall</title>" + "x".repeat(10_000)));
+    let destroyed = false;
+    responses.set("https://example.com/", () => ({
+      status: 200,
+      headers: gzipHeaders,
+      body: () => {
+        // First half arrives, then the socket goes silent forever.
+        const r = new Readable({ read() {} });
+        r.push(gz.subarray(0, gz.length >> 1));
+        r.on("close", () => (destroyed = true));
+        return r;
+      },
+    }));
+    const started = Date.now();
+    await assert.rejects(safeFetchHtml("https://example.com/", fetchOpts(200)), isNetworkError);
+    assert.ok(Date.now() - started < 2000, "aborted near the deadline");
+    assert.equal(destroyed, true, "response destroyed");
+  });
+
+  test("gzip body whose response errors mid-stream rejects promptly", { timeout: 5000 }, async () => {
+    const gz = zlib.gzipSync(Buffer.from("<html><title>Broken</title>" + "x".repeat(10_000)));
+    responses.set("https://example.com/", () => ({
+      status: 200,
+      headers: gzipHeaders,
+      body: () => {
+        const r = new Readable({ read() {} });
+        r.push(gz.subarray(0, gz.length >> 1));
+        setTimeout(() => r.destroy(new Error("ECONNRESET")), 20);
+        return r;
+      },
+    }));
+    const started = Date.now();
+    await assert.rejects(safeFetchHtml("https://example.com/", fetchOpts(3000)), isNetworkError);
+    assert.ok(Date.now() - started < 1000, "rejected before the deadline");
+  });
+
+  test("gzip bomb stops at the decompressed byte cap", { timeout: 5000 }, async () => {
+    // ~200 KB compressed, 200 MB decompressed.
+    const bomb = zlib.gzipSync(Buffer.alloc(200 * 1024 * 1024, 0x61), { level: 9 });
+    assert.ok(bomb.length < 512 * 1024);
+    let sourceDestroyed = false;
+    responses.set("https://example.com/", () => ({
+      status: 200,
+      headers: gzipHeaders,
+      body: () => {
+        const r = Readable.from([Buffer.from(bomb)]);
+        r.on("close", () => (sourceDestroyed = true));
+        return r;
+      },
+    }));
+    const cap = 1024 * 1024;
+    const { html: body } = await safeFetchHtml("https://example.com/", fetchOpts(3000, cap));
+    assert.equal(Buffer.byteLength(body), cap);
+    await new Promise((r) => setImmediate(r));
+    assert.equal(sourceDestroyed, true, "source released after the cap");
   });
 
   test("per-account rate limit returns 429", async () => {

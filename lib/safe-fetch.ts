@@ -2,7 +2,7 @@ import http from "node:http";
 import https from "node:https";
 import { BlockList, isIP } from "node:net";
 import { promises as dns } from "node:dns";
-import { Readable } from "node:stream";
+import { addAbortSignal, pipeline, type Readable } from "node:stream";
 import zlib from "node:zlib";
 
 // Outbound fetch for user-supplied URLs (SSRF-safe).
@@ -15,7 +15,7 @@ import zlib from "node:zlib";
 // and capped. The body is capped in bytes and must be HTML.
 
 export class SafeFetchError extends Error {
-  constructor(public reason: "blocked" | "status" | "content-type") {
+  constructor(public reason: "blocked" | "status" | "content-type" | "network") {
     super(reason);
   }
 }
@@ -98,26 +98,49 @@ function requestPinned(
   });
 }
 
-async function readCapped(res: http.IncomingMessage, maxBytes: number): Promise<string> {
+function decoderFor(encoding: string): zlib.Gunzip | zlib.Inflate | zlib.BrotliDecompress | null {
+  if (encoding === "gzip" || encoding === "x-gzip") return zlib.createGunzip();
+  if (encoding === "deflate") return zlib.createInflate();
+  if (encoding === "br") return zlib.createBrotliDecompress();
+  if (encoding === "identity") return null;
+  throw new SafeFetchError("content-type");
+}
+
+async function readCapped(
+  res: http.IncomingMessage,
+  maxBytes: number,
+  signal: AbortSignal,
+): Promise<string> {
   const encoding = String(res.headers["content-encoding"] ?? "identity").toLowerCase();
-  let stream: Readable = res;
-  if (encoding === "gzip" || encoding === "x-gzip") stream = res.pipe(zlib.createGunzip());
-  else if (encoding === "deflate") stream = res.pipe(zlib.createInflate());
-  else if (encoding === "br") stream = res.pipe(zlib.createBrotliDecompress());
-  else if (encoding !== "identity") throw new SafeFetchError("content-type");
+  let decoder: ReturnType<typeof decoderFor>;
+  try {
+    decoder = decoderFor(encoding);
+  } catch (err) {
+    res.destroy();
+    throw err;
+  }
+  // pipeline (not pipe) propagates errors and destruction both ways, so a
+  // failed or aborted response also ends the decompressor, and vice versa.
+  const stream: Readable = decoder ? pipeline(res, decoder, () => {}) : res;
+  // The overall deadline covers the body: a stall after headers is aborted.
+  addAbortSignal(signal, stream);
 
   const chunks: Buffer[] = [];
   let total = 0;
   try {
     for await (const chunk of stream) {
+      // Counts decompressed bytes, so a small compressed bomb hits the cap.
       const buf = chunk as Buffer;
       const room = maxBytes - total;
       chunks.push(buf.length > room ? buf.subarray(0, room) : buf);
       total += Math.min(buf.length, room);
       if (total >= maxBytes) break; // cap reached: parse what we have
     }
+  } catch {
+    throw new SafeFetchError("network"); // reset, bad encoding, or deadline
   } finally {
     stream.destroy();
+    decoder?.destroy();
     res.destroy();
   }
   return Buffer.concat(chunks).toString("utf8");
@@ -154,6 +177,6 @@ export async function safeFetchHtml(
       res.destroy();
       throw new SafeFetchError("content-type");
     }
-    return { url: url.href, html: await readCapped(res, opts.maxBytes) };
+    return { url: url.href, html: await readCapped(res, opts.maxBytes, signal) };
   }
 }
