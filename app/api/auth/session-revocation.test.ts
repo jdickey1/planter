@@ -35,9 +35,59 @@ type ResetRow = { user_id: number; token: string; expires_at: Date; used_at: Dat
 const users: UserRow[] = [];
 const resetTokens: ResetRow[] = [];
 
-async function runQuery(sql: string, params: unknown[] = []): Promise<unknown[]> {
+// Minimal row-lock model: a transaction client holds row locks until COMMIT or
+// ROLLBACK, waits on rows another client holds, and fails with a deadlock
+// error when that wait would close a cycle (as Postgres does).
+const locks = new Map<string, number>();
+const waitingFor = new Map<number, number>();
+let nextClient = 1;
+
+function releaseLocks(client: number) {
+  for (const [key, owner] of locks) if (owner === client) locks.delete(key);
+}
+
+async function acquire(client: number, keys: string[]) {
+  for (const key of keys) {
+    for (;;) {
+      const owner = locks.get(key);
+      if (owner === undefined || owner === client) break;
+      for (let h: number | undefined = owner; h !== undefined; h = waitingFor.get(h)) {
+        if (h === client) {
+          waitingFor.delete(client);
+          throw new Error("deadlock detected");
+        }
+      }
+      waitingFor.set(client, owner);
+      await new Promise((r) => setImmediate(r));
+    }
+    waitingFor.delete(client);
+    locks.set(key, client);
+  }
+}
+
+function lockKeys(s: string, params: unknown[]): string[] {
+  if (/^SELECT .* FROM users WHERE id = \$1 FOR UPDATE$/.test(s) || /^UPDATE users SET password_hash/.test(s)) {
+    return [`user:${s.startsWith("UPDATE") ? params[1] : params[0]}`];
+  }
+  if (/^UPDATE password_reset_tokens SET used_at = NOW\(\) WHERE token = \$1/.test(s)) {
+    return resetTokens.some((t) => t.token === params[0]) ? [`token:${params[0]}`] : [];
+  }
+  if (/^UPDATE password_reset_tokens SET used_at = NOW\(\) WHERE user_id = \$1/.test(s)) {
+    return resetTokens.filter((t) => t.user_id === params[0]).map((t) => `token:${t.token}`);
+  }
+  return [];
+}
+
+let bcryptHashCalls = 0;
+
+async function runQuery(sql: string, params: unknown[] = [], client = 0): Promise<unknown[]> {
   const s = sql.replace(/\s+/g, " ").trim();
-  if (/^(BEGIN|COMMIT|ROLLBACK)$/i.test(s)) return [];
+  if (/^(COMMIT|ROLLBACK)$/i.test(s)) {
+    releaseLocks(client);
+    return [];
+  }
+  if (/^BEGIN$/i.test(s)) return [];
+  if (client) await acquire(client, lockKeys(s, params));
 
   if (/^SELECT .* FROM users WHERE email = \$1/.test(s)) {
     return users.filter((u) => u.email === params[0]);
@@ -85,15 +135,18 @@ async function runQuery(sql: string, params: unknown[] = []): Promise<unknown[]>
 }
 
 // Yield between statements so concurrent requests interleave like real I/O.
-async function query(sql: string, params?: unknown[]) {
+async function query(sql: string, params?: unknown[], client = 0) {
   await new Promise((r) => setImmediate(r));
-  return runQuery(sql, params);
+  return runQuery(sql, params, client);
 }
 const fakePool = {
-  connect: async () => ({
-    query: async (sql: string, params?: unknown[]) => ({ rows: await query(sql, params) }),
-    release: () => {},
-  }),
+  connect: async () => {
+    const id = nextClient++;
+    return {
+      query: async (sql: string, params?: unknown[]) => ({ rows: await query(sql, params, id) }),
+      release: () => releaseLocks(id),
+    };
+  },
 };
 mock.module("@/lib/db", {
   defaultExport: fakePool,
@@ -113,10 +166,10 @@ let resetPassword: Handler;
 const COOKIE = "linkplanter_session";
 let ipCounter = 0;
 
-function json(url: string, body: unknown) {
+function json(url: string, body: unknown, ip = `198.51.100.${++ipCounter}`) {
   return new Request(`https://linkplanter.com${url}`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-forwarded-for": `198.51.100.${++ipCounter}` },
+    headers: { "content-type": "application/json", "x-forwarded-for": ip },
     body: JSON.stringify(body),
   });
 }
@@ -137,6 +190,12 @@ async function meWith(token: string) {
 
 describe("session revocation and reset tokens", () => {
   before(async () => {
+    // Count bcrypt work so tests can prove an invalid token costs no hashing.
+    const realHash = bcrypt.hash;
+    mock.method(bcrypt, "hash", (...args: Parameters<typeof bcrypt.hash>) => {
+      bcryptHashCalls++;
+      return realHash(...args);
+    });
     ({ POST: login } = await import("./login/route.ts"));
     ({ GET: me } = await import("./me/route.ts"));
     ({ POST: logout } = await import("./logout/route.ts"));
@@ -146,6 +205,8 @@ describe("session revocation and reset tokens", () => {
   beforeEach(async () => {
     users.length = 0;
     resetTokens.length = 0;
+    locks.clear();
+    waitingFor.clear();
     users.push({
       id: 7,
       email: "owner@example.com",
@@ -159,6 +220,7 @@ describe("session revocation and reset tokens", () => {
       created_at: new Date(),
       updated_at: new Date(),
     });
+    bcryptHashCalls = 0; // after seeding, which hashes the fixture password
   });
 
   test("a live session works", async () => {
@@ -207,5 +269,35 @@ describe("session revocation and reset tokens", () => {
     const res = await resetPassword(json("/api/auth/reset-password", { token: "reset-old", password: "new-password-456" }));
     assert.equal(res.status, 400);
     assert.equal(await bcrypt.compare("old-password-123", users[0].password_hash), true);
+  });
+
+  test("two valid reset tokens for one user submitted concurrently never 500", async () => {
+    const later = new Date(Date.now() + 3_600_000);
+    resetTokens.push({ user_id: 7, token: "reset-c1", expires_at: later, used_at: null });
+    resetTokens.push({ user_id: 7, token: "reset-c2", expires_at: later, used_at: null });
+
+    const results = await Promise.all([
+      resetPassword(json("/api/auth/reset-password", { token: "reset-c1", password: "new-password-c1" })),
+      resetPassword(json("/api/auth/reset-password", { token: "reset-c2", password: "new-password-c2" })),
+    ]);
+    const statuses = results.map((r) => r.status).sort();
+    assert.deepEqual(statuses, [200, 400], "one reset wins; the other sees a burned token, not a deadlock");
+  });
+
+  test("an unknown reset token is refused without spending bcrypt work", async () => {
+    const res = await resetPassword(json("/api/auth/reset-password", { token: "no-such-token", password: "new-password-456" }));
+    assert.equal(res.status, 400);
+    assert.equal(bcryptHashCalls, 0, "invalid tokens must be rejected before hashing");
+  });
+
+  test("reset-password is rate limited per IP", async () => {
+    const ip = "203.0.113.77";
+    const statuses: number[] = [];
+    for (let i = 0; i < 12; i++) {
+      const res = await resetPassword(json("/api/auth/reset-password", { token: `guess-${i}`, password: "new-password-456" }, ip));
+      statuses.push(res.status);
+    }
+    assert.ok(statuses.includes(429), `expected a 429 among ${statuses.join(",")}`);
+    assert.equal(statuses.at(-1), 429);
   });
 });

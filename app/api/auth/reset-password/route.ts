@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { resetPasswordWithToken } from "@/lib/auth";
+import { rateLimitByIP } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   try {
+    // ponytail: in-memory per-IP limit like forgot-password; shared store if this runs multi-instance.
+    const { success: rlOk } = rateLimitByIP(request, "reset-password", 10, 900000);
+    if (!rlOk) {
+      return NextResponse.json({ error: "Too many attempts. Try again later." }, { status: 429 });
+    }
+
     const { token, password } = await request.json();
 
     if (!token || !password || typeof token !== "string" || typeof password !== "string") {

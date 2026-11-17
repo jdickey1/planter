@@ -181,11 +181,23 @@ export async function createPasswordResetToken(userId: number): Promise<string> 
 // other outstanding reset tokens for the user. Returns the user id, or null
 // when the token is unknown, expired or already used.
 export async function resetPasswordWithToken(token: string, newPassword: string): Promise<number | null> {
+  // Cheap unlocked validity check first, so unknown or expired tokens cost no
+  // bcrypt work. The atomic claim below is still what decides the winner.
+  const candidate = await queryOne<{ user_id: number }>(
+    `SELECT user_id FROM password_reset_tokens
+     WHERE token = $1 AND expires_at > NOW() AND used_at IS NULL`,
+    [token]
+  );
+  if (!candidate) return null;
   // Hash outside the transaction: bcrypt is slow and must not hold row locks.
   const passwordHash = await hashPassword(newPassword);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // Lock the user row before any token row. Every reset for this user then
+    // takes locks in the same order, so two different valid tokens submitted
+    // at once serialize instead of deadlocking (the loser sees a burned token).
+    await client.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [candidate.user_id]);
     const claimed = await client.query<{ user_id: number }>(
       `UPDATE password_reset_tokens SET used_at = NOW()
        WHERE token = $1 AND expires_at > NOW() AND used_at IS NULL
