@@ -7,7 +7,7 @@ process.env.AUTH_SECRET ??= "test-secret-directories-do-not-use";
 // The stub applies the premium entitlement only when the route's SQL asks for
 // it through a users subquery bound to a parameter (`u.id = $n`), evaluated
 // against the stored subscription row. The real SQL is exercised separately
-// against Postgres; this test pins the route's contract.
+// against Postgres in app/api/db-live.test.ts; this test pins the route's contract.
 
 type UserRow = {
   id: number;

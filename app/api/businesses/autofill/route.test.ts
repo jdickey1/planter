@@ -42,6 +42,7 @@ mock.module("@/lib/auth", {
 
 let POST: (request: Request) => Promise<Response>;
 let safeFetchHtml: typeof import("@/lib/safe-fetch").safeFetchHtml;
+let isPublicAddress: typeof import("@/lib/safe-fetch").isPublicAddress;
 let SafeFetchError: typeof import("@/lib/safe-fetch").SafeFetchError;
 
 // ---------------------------------------------------------------------------
@@ -178,7 +179,7 @@ async function assertNoInternalHtml(res: Response, status = 400) {
 describe("POST /api/businesses/autofill", () => {
   before(async () => {
     ({ POST } = await import("./route.ts"));
-    ({ safeFetchHtml, SafeFetchError } = await import("@/lib/safe-fetch"));
+    ({ safeFetchHtml, SafeFetchError, isPublicAddress } = await import("@/lib/safe-fetch"));
   });
 
   beforeEach(() => {
@@ -432,6 +433,32 @@ describe("POST /api/businesses/autofill", () => {
     assert.equal(Buffer.byteLength(body), cap);
     await new Promise((r) => setImmediate(r));
     assert.equal(sourceDestroyed, true, "source released after the cap");
+  });
+
+  test("connection-level errors (refused, TLS, timeout) are a 400, not a 500", async () => {
+    const failures = [
+      Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
+      Object.assign(new Error("certificate has expired"), { code: "CERT_HAS_EXPIRED" }),
+      Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError", code: 23 }),
+    ];
+    for (const failure of failures) {
+      ipResponses.set(PUBLIC_IP, () => {
+        throw failure;
+      });
+      await assert.rejects(safeFetchHtml("https://example.com/", fetchOpts(3000)), isNetworkError);
+      const res = await post("https://example.com/");
+      assert.equal(res.status, 400, `${failure.message} should be a 400`);
+      assert.deepEqual(await res.json(), { error: "Could not fetch website" });
+    }
+  });
+
+  test("IPv4-compatible and SIIT IPv6 forms of internal addresses are not public", () => {
+    for (const ip of ["::127.0.0.1", "::7f00:1", "::a00:1", "::ffff:0:7f00:1", "::ffff:0:a9fe:a9fe"]) {
+      assert.equal(isPublicAddress(ip), false, `${ip} must be blocked`);
+    }
+    for (const ip of ["8.8.8.8", "::ffff:8.8.8.8", "2606:4700:4700::1111"]) {
+      assert.equal(isPublicAddress(ip), true, `${ip} must stay public`);
+    }
   });
 
   test("per-account rate limit returns 429", async () => {

@@ -135,8 +135,10 @@ async function runQuery(sql: string, params: unknown[] = [], client = 0): Promis
 }
 
 // Yield between statements so concurrent requests interleave like real I/O.
+let dbDown = false; // simulate a database outage
 async function query(sql: string, params?: unknown[], client = 0) {
   await new Promise((r) => setImmediate(r));
+  if (dbDown) throw new Error("connect ECONNREFUSED (simulated)");
   return runQuery(sql, params, client);
 }
 const fakePool = {
@@ -207,6 +209,7 @@ describe("session revocation and reset tokens", () => {
     resetTokens.length = 0;
     locks.clear();
     waitingFor.clear();
+    dbDown = false;
     users.push({
       id: 7,
       email: "owner@example.com",
@@ -238,6 +241,14 @@ describe("session revocation and reset tokens", () => {
 
     const res = await meWith(token);
     assert.equal(res.status, 401, "pre-logout token must not authenticate");
+  });
+
+  test("logout clears the cookie even when the database call fails", async () => {
+    await loginAndGetToken();
+    dbDown = true;
+    const out = await logout();
+    assert.equal(out.status, 500, "the failed server-side revoke is reported");
+    assert.equal(jar.has(COOKIE), false, "the browser cookie is cleared anyway");
   });
 
   test("a password reset revokes existing sessions", async () => {

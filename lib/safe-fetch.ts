@@ -15,8 +15,8 @@ import zlib from "node:zlib";
 // and capped. The body is capped in bytes and must be HTML.
 
 export class SafeFetchError extends Error {
-  constructor(public reason: "blocked" | "status" | "content-type" | "network") {
-    super(reason);
+  constructor(public reason: "blocked" | "status" | "content-type" | "network", options?: { cause?: unknown }) {
+    super(reason, options);
   }
 }
 
@@ -30,7 +30,9 @@ for (const [net, prefix] of [
 // No ::ffff:0:0/96 rule: BlockList already applies the IPv4 rules above to
 // IPv4-mapped IPv6 addresses, and such a rule would match every IPv4 address.
 for (const [net, prefix] of [
-  ["::", 128], ["::1", 128], ["64:ff9b::", 96], ["100::", 64],
+  // ::/96 is IPv4-compatible IPv6 (deprecated; covers :: and ::1 too) and
+  // ::ffff:0:0:0/96 is SIIT. Neither is the IPv4-mapped range above.
+  ["::", 96], ["::ffff:0:0:0", 96], ["64:ff9b::", 96], ["100::", 64],
   ["2001::", 32], ["2001:db8::", 32], ["2002::", 16], ["fc00::", 7], ["fe80::", 10],
   ["fec0::", 10], ["ff00::", 8],
 ] as const) blocked.addSubnet(net, prefix, "ipv6");
@@ -93,7 +95,11 @@ function requestPinned(
       },
       resolve,
     );
-    req.on("error", reject);
+    // Refused, reset, TLS and deadline errors become a typed "network" error,
+    // so callers answer with a 4xx instead of an unhandled 500.
+    req.on("error", (err) =>
+      reject(err instanceof SafeFetchError ? err : new SafeFetchError("network", { cause: err })),
+    );
     req.end();
   });
 }
