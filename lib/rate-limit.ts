@@ -5,7 +5,7 @@ setInterval(() => {
   for (const [key, value] of rateLimitMap) {
     if (now > value.resetTime) rateLimitMap.delete(key);
   }
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000).unref(); // do not keep the process (or a test run) alive
 
 export function rateLimit(
   key: string,

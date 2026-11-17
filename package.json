@@ -14,7 +14,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --experimental-test-module-mocks --test app/api/businesses/autofill/route.test.ts"
+    "test": "tsx --experimental-test-module-mocks --test 'app/**/*.test.ts'"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

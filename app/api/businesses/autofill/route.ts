@@ -1,152 +1,19 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import * as cheerio from "cheerio";
-import { promises as dns } from "dns";
+import { rateLimit } from "@/lib/rate-limit";
+import { safeFetchHtml, SafeFetchError } from "@/lib/safe-fetch";
 
-function isPrivateIp(ip: string): boolean {
-  // Strip IPv6 brackets if present
-  const addr = ip.replace(/^\[|\]$/g, "");
+const MAX_REDIRECTS = 3;
+const MAX_BODY_BYTES = 2 * 1024 * 1024; // metadata lives in <head>; 2 MB is plenty
+const TIMEOUT_MS = 10_000;
+const MAX_URL_LENGTH = 2048;
+const RATE_LIMIT = 10; // requests per account per window
+const RATE_WINDOW_MS = 60_000;
+const MAX_IN_FLIGHT = 2; // concurrent requests per account
 
-  // --- IPv4 checks ---
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(addr)) {
-    if (addr === "0.0.0.0") return true;
-    if (addr.startsWith("127.")) return true;
-    if (addr.startsWith("10.")) return true;
-    if (addr.startsWith("192.168.")) return true;
-    if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(addr)) return true;
-    if (addr.startsWith("169.254.")) return true; // link-local / cloud metadata
-    if (addr.startsWith("100.64.") || addr.startsWith("100.65.") ||
-        addr.startsWith("100.66.") || addr.startsWith("100.67.") ||
-        addr.startsWith("100.68.") || addr.startsWith("100.69.") ||
-        addr.startsWith("100.70.") || addr.startsWith("100.71.") ||
-        addr.startsWith("100.72.") || addr.startsWith("100.73.") ||
-        addr.startsWith("100.74.") || addr.startsWith("100.75.") ||
-        addr.startsWith("100.76.") || addr.startsWith("100.77.") ||
-        addr.startsWith("100.78.") || addr.startsWith("100.79.") ||
-        addr.startsWith("100.80.") || addr.startsWith("100.81.") ||
-        addr.startsWith("100.82.") || addr.startsWith("100.83.") ||
-        addr.startsWith("100.84.") || addr.startsWith("100.85.") ||
-        addr.startsWith("100.86.") || addr.startsWith("100.87.") ||
-        addr.startsWith("100.88.") || addr.startsWith("100.89.") ||
-        addr.startsWith("100.90.") || addr.startsWith("100.91.") ||
-        addr.startsWith("100.92.") || addr.startsWith("100.93.") ||
-        addr.startsWith("100.94.") || addr.startsWith("100.95.") ||
-        addr.startsWith("100.96.") || addr.startsWith("100.97.") ||
-        addr.startsWith("100.98.") || addr.startsWith("100.99.") ||
-        addr.startsWith("100.10") || addr.startsWith("100.11") ||
-        addr.startsWith("100.12") || addr.startsWith("100.127.")) return true; // CGNAT
-    if (addr.startsWith("198.18.") || addr.startsWith("198.19.")) return true; // benchmark
-    if (addr.startsWith("240.") || addr.startsWith("255.")) return true; // reserved
-    return false;
-  }
-
-  // --- IPv6 checks ---
-  const lower = addr.toLowerCase();
-
-  // Loopback ::1
-  if (lower === "::1" || lower === "0:0:0:0:0:0:0:1") return true;
-
-  // Unspecified ::
-  if (lower === "::" || lower === "0:0:0:0:0:0:0:0") return true;
-
-  // IPv4-mapped/compatible ::ffff:x.x.x.x
-  if (lower.startsWith("::ffff:")) return true;
-
-  // Link-local fe80::/10
-  if (lower.startsWith("fe80:") || lower.startsWith("fe9") ||
-      lower.startsWith("fea") || lower.startsWith("feb")) return true;
-
-  // Site-local (deprecated) fec0::/10
-  if (lower.startsWith("fec") || lower.startsWith("fed") ||
-      lower.startsWith("fee") || lower.startsWith("fef")) return true;
-
-  // ULA fc00::/7 (fc00:: and fd00::)
-  if (lower.startsWith("fc") || lower.startsWith("fd")) return true;
-
-  // IPv6 cloud metadata (AWS uses fd00:ec2::254, GCP uses similar)
-  if (lower.startsWith("fd00:ec2:") || lower.startsWith("fd00:")) return true;
-
-  // Multicast ff00::/8
-  if (lower.startsWith("ff")) return true;
-
-  return false;
-}
-
-async function isAllowedUrlWithDnsCheck(urlString: string): Promise<boolean> {
-  try {
-    const url = new URL(urlString);
-    if (url.protocol !== "https:" && url.protocol !== "http:") return false;
-    const hostname = url.hostname.replace(/^\[|\]$/g, ""); // strip IPv6 brackets
-
-    // Block localhost variants and the rest of 127.0.0.0/8
-    if (hostname === "localhost" || hostname === "0.0.0.0" || hostname.startsWith("127.")) return false;
-
-    // Block IPv6 loopback and mapped addresses (hostname-level check)
-    if (hostname === "::1" || hostname === "::ffff:127.0.0.1" || hostname.startsWith("::ffff:")) return false;
-    if (hostname === "0:0:0:0:0:0:0:1") return false;
-
-    // Block 0.0.0.0/8 range (all zeroes prefix)
-    if (/^0\./.test(hostname)) return false;
-
-    // Block RFC1918 private ranges (hostname-level)
-    if (hostname.startsWith("10.") || hostname.startsWith("192.168.")) return false;
-    if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname)) return false;
-
-    // Block link-local / cloud metadata IP (hostname-level)
-    if (hostname.startsWith("169.254.")) return false;
-
-    // Block IPv6 link-local, ULA, and private ranges at hostname level
-    const lowerHost = hostname.toLowerCase();
-    if (lowerHost.startsWith("fe80:") || lowerHost.startsWith("fc") ||
-        lowerHost.startsWith("fd") || lowerHost.startsWith("ff")) return false;
-
-    // Block short-form IP tricks (hex, octal, decimal integer)
-    if (/^\d+$/.test(hostname)) return false;         // decimal integer like 2130706433
-    if (/^0x[0-9a-f]+$/i.test(hostname)) return false; // hex 0x7f000001
-    if (/^0[0-7]/.test(hostname)) return false;        // octal 0177.0.0.1
-
-    // Block internal/local TLDs
-    if (hostname.endsWith(".internal") || hostname.endsWith(".local")) return false;
-    if (hostname.endsWith(".localhost")) return false;
-
-    // Literal IPs: run isPrivateIp (covers 127.1.1.1 and other 127/8, CGNAT, etc.)
-    // Do not call isPrivateIp on hostnames (fd… ULA prefix false-positives).
-    const ipv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
-    if (ipv4 || hostname.includes(":")) {
-      if (isPrivateIp(hostname)) return false;
-    } else if (/^[\d.]+$/.test(hostname)) {
-      return false;
-    } else {
-      // DNS rebinding protection: resolve hostname and verify resolved IPs are public
-      try {
-        const [ipv4Results, ipv6Results] = await Promise.allSettled([
-          dns.resolve4(hostname),
-          dns.resolve6(hostname),
-        ]);
-
-        const resolvedIps: string[] = [];
-        if (ipv4Results.status === "fulfilled") resolvedIps.push(...ipv4Results.value);
-        if (ipv6Results.status === "fulfilled") resolvedIps.push(...ipv6Results.value);
-
-        // If we can't resolve at all, fail closed
-        if (resolvedIps.length === 0) return false;
-
-        // Reject if ANY resolved IP is private/internal
-        for (const ip of resolvedIps) {
-          if (isPrivateIp(ip)) return false;
-        }
-      } catch {
-        // DNS lookup failed entirely — fail closed
-        return false;
-      }
-    }
-
-    return true;
-  } catch {
-    return false;
-  }
-}
-
+// ponytail: in-process counters, like lib/rate-limit; move both to a shared store if this runs on more than one process.
+const inFlight = new Map<number, number>();
 
 export async function POST(request: Request) {
   try {
@@ -155,9 +22,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
+    if (!rateLimit(`autofill:${session.id}`, RATE_LIMIT, RATE_WINDOW_MS).success) {
+      return NextResponse.json({ error: "Too many requests. Try again later." }, { status: 429 });
+    }
+
     const { url } = await request.json();
 
-    if (!url) {
+    if (!url || typeof url !== "string" || url.length > MAX_URL_LENGTH) {
       return NextResponse.json({ error: "URL is required" }, { status: 400 });
     }
 
@@ -166,59 +37,40 @@ export async function POST(request: Request) {
     if (!normalizedUrl.startsWith("http://") && !normalizedUrl.startsWith("https://")) {
       normalizedUrl = "https://" + normalizedUrl;
     }
-
-    // Validate URL to prevent SSRF (includes DNS rebinding check)
-    if (!(await isAllowedUrlWithDnsCheck(normalizedUrl))) {
+    if (!URL.canParse(normalizedUrl)) {
       return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
     }
 
-    const fetchHeaders = {
-      "User-Agent": "Mozilla/5.0 (compatible; LinkPlanter/1.0; +https://linkplanter.com)",
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    };
-    const MAX_REDIRECTS = 3;
-    let currentUrl = normalizedUrl;
-    let response = await fetch(currentUrl, {
-      headers: fetchHeaders,
-      redirect: "manual",
-      signal: AbortSignal.timeout(10000),
-    });
-
-    for (
-      let hop = 0;
-      hop < MAX_REDIRECTS && response.status >= 300 && response.status < 400;
-      hop++
-    ) {
-      const location = response.headers.get("Location");
-      if (!location) {
-        return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
+    // Check and claim a concurrency slot with no await in between.
+    if ((inFlight.get(session.id) ?? 0) >= MAX_IN_FLIGHT) {
+      return NextResponse.json({ error: "Too many requests. Try again later." }, { status: 429 });
+    }
+    // One validated, address-pinned connection per hop (see lib/safe-fetch).
+    let html: string;
+    inFlight.set(session.id, (inFlight.get(session.id) ?? 0) + 1);
+    try {
+      ({ html } = await safeFetchHtml(normalizedUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; LinkPlanter/1.0; +https://linkplanter.com)",
+          "Accept": "text/html,application/xhtml+xml;q=0.9",
+          "Accept-Encoding": "gzip, deflate, br",
+        },
+        maxRedirects: MAX_REDIRECTS,
+        maxBytes: MAX_BODY_BYTES,
+        timeoutMs: TIMEOUT_MS,
+      }));
+    } catch (error) {
+      if (error instanceof SafeFetchError) {
+        const message = error.reason === "blocked" ? "Invalid URL" : "Could not fetch website";
+        return NextResponse.json({ error: message }, { status: 400 });
       }
-      let nextUrl: string;
-      try {
-        nextUrl = new URL(location, currentUrl).href;
-      } catch {
-        return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
-      }
-      if (!(await isAllowedUrlWithDnsCheck(nextUrl))) {
-        return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
-      }
-      currentUrl = nextUrl;
-      response = await fetch(currentUrl, {
-        headers: fetchHeaders,
-        redirect: "manual",
-        signal: AbortSignal.timeout(10000),
-      });
+      throw error;
+    } finally {
+      const n = (inFlight.get(session.id) ?? 1) - 1;
+      if (n > 0) inFlight.set(session.id, n);
+      else inFlight.delete(session.id);
     }
 
-    if (response.status >= 300 && response.status < 400) {
-      return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
-    }
-
-    if (!response.ok) {
-      return NextResponse.json({ error: "Could not fetch website" }, { status: 400 });
-    }
-
-    const html = await response.text();
     const $ = cheerio.load(html);
 
     // Extract data
